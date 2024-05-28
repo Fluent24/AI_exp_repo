@@ -1,14 +1,19 @@
 import os
-import audiofile
-import numpy as np
 import argparse
-from sklearn.svm import SVR
-from sklearn.metrics import mean_squared_error, r2_score
-from sklearn.preprocessing import StandardScaler
 import joblib
+
+import numpy as np
 import torch
-from transformers import Wav2Vec2ForCTC
+import wandb
+import audiofile
 from scipy.stats import pearsonr
+from sklearn.svm import SVR
+import xgboost as xgb
+from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import RandomizedSearchCV
+from transformers import Wav2Vec2ForCTC
 
 def open_file(filename):
     with open(filename) as f:
@@ -79,37 +84,12 @@ def load_or_extract_features(args, data_type):
     print(f"wav2vec2 feature {data_type}, {feat_X.shape}, {feat_Y.shape}")
     return feat_X, feat_Y
 
-# def train_and_evaluate(args):
-#     trn_feat_x, trn_feat_y = load_or_extract_features(args, 'trn')  # feature extraction or loading for training data
-#     val_feat_x, val_feat_y = load_or_extract_features(args, 'val')  # feature extraction or loading for validation data
-#     test_feat_x, test_feat_y = load_or_extract_features(args, 'test')  # feature extraction or loading for test data
-
-#     scaler = StandardScaler()
-#     trn_feat_x = scaler.fit_transform(trn_feat_x)
-#     val_feat_x = scaler.transform(val_feat_x)
-#     test_feat_x = scaler.transform(test_feat_x)
-
-#     model = SVR(kernel='rbf', C=1.0, epsilon=0.1)
-
-#     model.fit(trn_feat_x, trn_feat_y.ravel())
-    
-#     val_preds = model.predict(val_feat_x)
-#     test_preds = model.predict(test_feat_x)
-
-#     val_mse = mean_squared_error(val_feat_y, val_preds)
-#     val_r2 = r2_score(val_feat_y, val_preds)
-    
-#     test_mse = mean_squared_error(test_feat_y, test_preds)
-#     test_r2 = r2_score(test_feat_y, test_preds)
-    
-#     print(f"Validation MSE: {val_mse}, R^2: {val_r2}")
-#     print(f"Test MSE: {test_mse}, R^2: {test_r2}")
-
-#     joblib.dump(model, os.path.join(args.dir_model, 'svr_model.joblib'))
-#     joblib.dump(scaler, os.path.join(args.dir_model, 'scaler.joblib'))
-from sklearn.ensemble import RandomForestRegressor
 
 def train_and_evaluate(args):
+    # Initialize wandb
+    wandb.init(project="fluent-ml-exp", config=args)
+    config = wandb.config
+
     trn_feat_x, trn_feat_y = load_or_extract_features(args, 'trn')
     val_feat_x, val_feat_y = load_or_extract_features(args, 'val')
     test_feat_x, test_feat_y = load_or_extract_features(args, 'test')
@@ -119,12 +99,29 @@ def train_and_evaluate(args):
     val_feat_x = scaler.transform(val_feat_x)
     test_feat_x = scaler.transform(test_feat_x)
 
-    model = RandomForestRegressor(n_estimators=100, random_state=42)
+    # Define the parameter grid for XGBoost
+    param_grid = {
+        'n_estimators': [50, 100, 200],
+        'max_depth': [3, 6, 9],
+        'learning_rate': [0.01, 0.1, 0.2],
+        'subsample': [0.8, 0.9, 1.0],
+        'colsample_bytree': [0.8, 0.9, 1.0],
+        'gamma': [0, 0.1, 0.2]
+    }
 
-    model.fit(trn_feat_x, trn_feat_y.ravel())
-    
-    val_preds = model.predict(val_feat_x)
-    test_preds = model.predict(test_feat_x)
+    xg_reg = xgb.XGBRegressor(tree_method='gpu_hist', random_state=42, use_label_encoder=False)
+
+    # Use RandomizedSearchCV for hyperparameter tuning
+    xg_random = RandomizedSearchCV(estimator=xg_reg, param_distributions=param_grid, n_iter=100, cv=3, verbose=2, random_state=42, n_jobs=-1)
+
+    # Fit the model
+    xg_random.fit(trn_feat_x, trn_feat_y.ravel())
+
+    # Get the best model
+    best_xg_reg = xg_random.best_estimator_
+
+    val_preds = best_xg_reg.predict(val_feat_x)
+    test_preds = best_xg_reg.predict(test_feat_x)
 
     val_mse = mean_squared_error(val_feat_y, val_preds)
     val_r2 = r2_score(val_feat_y, val_preds)
@@ -132,18 +129,23 @@ def train_and_evaluate(args):
     test_mse = mean_squared_error(test_feat_y, test_preds)
     test_r2 = r2_score(test_feat_y, test_preds)
     
-    print(f"Validation MSE: {val_mse}, R^2: {val_r2}")
-    print(f"Test MSE: {test_mse}, R^2: {test_r2}")
+    # Log metrics to wandb
+    wandb.log({"Validation MSE": val_mse, "Validation R^2": val_r2, "Test MSE": test_mse, "Test R^2": test_r2})
 
+    # Calculate Pearson correlation coefficient
     pearson_corr, _ = pearsonr(test_feat_y.ravel(), test_preds)
     print(f"Test Pearson Correlation: {pearson_corr}")
-    if not os.path.exists(args.dir_model):
-        os.makedirs(args.dir_model)
+    
+    # Log Pearson correlation to wandb
+    wandb.log({"Test Pearson Correlation": pearson_corr})
 
-    joblib.dump(model, os.path.join(args.dir_model, 'rf_model.joblib'))
+    joblib.dump(best_xg_reg, os.path.join(args.dir_model, 'best_xg_reg_model.joblib'))
     joblib.dump(scaler, os.path.join(args.dir_model, 'scaler.joblib'))
 
+    wandb.finish()
 
+
+    wandb.finish()
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--lang", default='en', type=str)
@@ -165,4 +167,4 @@ if __name__ == "__main__":
     train_and_evaluate(args)
 
 
-#python train_svm.py --dir_list="datasets_list" --dir_model="model_rf"
+#python train_RFG_hyper.py --dir_list="datasets_list" --dir_model="model_rf"
