@@ -110,7 +110,7 @@ def train_and_evaluate(args):
     svr = SVR()
 
     # Use RandomizedSearchCV for hyperparameter tuning
-    svr_random = RandomizedSearchCV(estimator=svr, param_distributions=param_grid, n_iter=100, cv=1, verbose=2, random_state=42, n_jobs=-1)
+    svr_random = RandomizedSearchCV(estimator=svr, param_distributions=param_grid, n_iter=100, cv=3, verbose=2, random_state=42, n_jobs=-1)
 
     # Fit the model
     svr_random.fit(trn_feat_x, trn_feat_y.ravel())
