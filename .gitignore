@@ -16,7 +16,7 @@ model_compare_3arch_ckpts/
 *.npz
 */wandb/*
 wandb/
-
+datasets_full_list_feature_extracted.tar
 .ipynb_checkpoints/
 pretrained_models/
 tmp*/

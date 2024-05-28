@@ -136,7 +136,8 @@ def train_and_evaluate(args):
     
     # Log Pearson correlation to wandb
     wandb.log({"Test Pearson Correlation": pearson_corr})
-
+    if not os.path.exists(args.dir_model):
+        os.makedirs(args.dir_model)
     joblib.dump(best_svr, os.path.join(args.dir_model, 'best_svr_model.joblib'))
     joblib.dump(scaler, os.path.join(args.dir_model, 'scaler.joblib'))
 

@@ -1,0 +1,9 @@
+xgboost
+torch
+audiofile
+numpy
+wandb
+scipy
+scikit-learn
+transformers
+joblib
