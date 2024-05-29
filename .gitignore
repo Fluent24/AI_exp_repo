@@ -7,7 +7,7 @@
 pretrained_models
 .ipynb_checkpoints
 */.ipynb_checkpoints/*
-
+datasets_full_list_feature_extracted/
 model_transformer/
 model_svr/
 model_compare_3arch_ckpts/

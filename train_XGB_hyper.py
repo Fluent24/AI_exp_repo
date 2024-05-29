@@ -141,8 +141,8 @@ def train_and_evaluate(args):
 
     if not os.path.exists(args.dir_model):
         os.makedirs(args.dir_model)
-    joblib.dump(best_xg_reg, os.path.join(args.dir_model, 'best_xg_reg_model.joblib'))
-    joblib.dump(scaler, os.path.join(args.dir_model, 'scaler.joblib'))
+    joblib.dump(best_xg_reg, os.path.join(args.dir_model, f'best_xg_reg_model_{args.label_type2}+{args.label_type2}.joblib'))
+    joblib.dump(scaler, os.path.join(args.dir_model, f'scaler_{args.label_type2}+{args.label_type2}.joblib'))
 
     wandb.finish()
 

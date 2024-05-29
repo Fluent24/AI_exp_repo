@@ -99,28 +99,17 @@ def train_and_evaluate(args):
     val_feat_x = scaler.transform(val_feat_x)
     test_feat_x = scaler.transform(test_feat_x)
 
-    # Define the parameter grid for SVM
-    param_grid = {
-        'C': [0.1, 1, 10, 100],
-        'epsilon': [0.01, 0.1, 1],
-        'kernel': ['linear', 'poly', 'rbf', 'sigmoid'],
-        'degree': [2, 3, 4]  # Only relevant for 'poly' kernel
-    }
-
+    # Initialize SVR model with default parameters
     svr = SVR()
 
-    # Use RandomizedSearchCV for hyperparameter tuning
-    svr_random = RandomizedSearchCV(estimator=svr, param_distributions=param_grid, n_iter=100, cv=3, verbose=2, random_state=42, n_jobs=-1)
-
     # Fit the model
-    svr_random.fit(trn_feat_x, trn_feat_y.ravel())
+    svr.fit(trn_feat_x, trn_feat_y.ravel())
 
-    # Get the best model
-    best_svr = svr_random.best_estimator_
+    # Predict on validation and test sets
+    val_preds = svr.predict(val_feat_x)
+    test_preds = svr.predict(test_feat_x)
 
-    val_preds = best_svr.predict(val_feat_x)
-    test_preds = best_svr.predict(test_feat_x)
-
+    # Evaluate the model
     val_mse = mean_squared_error(val_feat_y, val_preds)
     val_r2 = r2_score(val_feat_y, val_preds)
     
@@ -136,10 +125,12 @@ def train_and_evaluate(args):
     
     # Log Pearson correlation to wandb
     wandb.log({"Test Pearson Correlation": pearson_corr})
+
+    # Save the model and scaler
     if not os.path.exists(args.dir_model):
         os.makedirs(args.dir_model)
-    joblib.dump(best_svr, os.path.join(args.dir_model, 'best_svr_model.joblib'))
-    joblib.dump(scaler, os.path.join(args.dir_model, 'scaler.joblib'))
+    joblib.dump(svr, os.path.join(args.dir_model, f'svr_model_{args.label_type2}+{args.label_type2}.joblib'))
+    joblib.dump(scaler, os.path.join(args.dir_model, f'scaler_{args.label_type2}+{args.label_type2}.joblib'))
 
     wandb.finish()
 
