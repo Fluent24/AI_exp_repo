@@ -7,12 +7,9 @@ import torch
 import wandb
 import audiofile
 from scipy.stats import pearsonr
-from sklearn.svm import SVR
-import xgboost as xgb
-from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import RandomizedSearchCV
 from transformers import Wav2Vec2ForCTC
 
 def open_file(filename):
@@ -99,29 +96,14 @@ def train_and_evaluate(args):
     val_feat_x = scaler.transform(val_feat_x)
     test_feat_x = scaler.transform(test_feat_x)
 
-    # Define the parameter grid for XGBoost
-    param_grid = {
-        'n_estimators': [50, 100, 200],
-        'max_depth': [3, 6, 9],
-        'learning_rate': [0.01, 0.1, 0.2],
-        'subsample': [0.8, 0.9, 1.0],
-        'colsample_bytree': [0.8, 0.9, 1.0],
-        'gamma': [0, 0.1, 0.2]
-    }
-
-    xg_reg = xgb.XGBRegressor(tree_method='gpu_hist', random_state=42, use_label_encoder=False)
-
-    # Use RandomizedSearchCV for hyperparameter tuning
-    xg_random = RandomizedSearchCV(estimator=xg_reg, param_distributions=param_grid, n_iter=100, cv=3, verbose=2, random_state=42, n_jobs=-1)
+    # Initialize and train Random Forest model with default parameters
+    rf_reg = RandomForestRegressor(random_state=42)
 
     # Fit the model
-    xg_random.fit(trn_feat_x, trn_feat_y.ravel())
+    rf_reg.fit(trn_feat_x, trn_feat_y.ravel())
 
-    # Get the best model
-    best_xg_reg = xg_random.best_estimator_
-
-    val_preds = best_xg_reg.predict(val_feat_x)
-    test_preds = best_xg_reg.predict(test_feat_x)
+    val_preds = rf_reg.predict(val_feat_x)
+    test_preds = rf_reg.predict(test_feat_x)
 
     val_mse = mean_squared_error(val_feat_y, val_preds)
     val_r2 = r2_score(val_feat_y, val_preds)
@@ -141,13 +123,11 @@ def train_and_evaluate(args):
 
     if not os.path.exists(args.dir_model):
         os.makedirs(args.dir_model)
-    joblib.dump(best_xg_reg, os.path.join(args.dir_model, f'best_xg_reg_model_{args.label_type2}+{args.label_type2}.joblib'))
+    joblib.dump(rf_reg, os.path.join(args.dir_model, f'best_rf_reg_model_{args.label_type2}+{args.label_type2}.joblib'))
     joblib.dump(scaler, os.path.join(args.dir_model, f'scaler_{args.label_type2}+{args.label_type2}.joblib'))
 
     wandb.finish()
 
-
-    wandb.finish()
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--lang", default='en', type=str)
@@ -159,7 +139,7 @@ if __name__ == "__main__":
     parser.add_argument("--audio_len_max", default=200000, type=int)
     parser.add_argument("--device", default='cuda', type=str)
     parser.add_argument("--dir_list", default='', type=str)
-    parser.add_argument("--dir_model", default='model_svr', type=str)
+    parser.add_argument("--dir_model", default='model_rf', type=str)
 
     args = parser.parse_args()
 
@@ -167,6 +147,3 @@ if __name__ == "__main__":
         args.base_model = 'facebook/wav2vec2-large-robust-ft-libri-960h'
 
     train_and_evaluate(args)
-
-
-#python3 train_XGB_hyper.py --dir_list="datasets_list" --dir_model="model_xgb" --label_type1="fluency" --label_type2="articulation"
